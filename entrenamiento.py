@@ -163,7 +163,7 @@ print("\n" + "="*60)
 print(f"ENTRENAMIENTO INICIADO ({TIMESTAMP})")
 print("="*60)
 
-model.learn(total_timesteps=2000, reset_num_timesteps=False)
+model.learn(total_timesteps=5_000, reset_num_timesteps=False)
 
 # === GUARDAR ===
 model.save(MODEL_PATH)
