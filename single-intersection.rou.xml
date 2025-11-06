@@ -8,7 +8,7 @@
     <!-- Flujo Norte → Sur: 900 vehículos/hora (1 cada ~4 segundos) -->
     <flow id="flow_ns" route="route_ns"
           begin="0" end="2000"
-          vehsPerHour="900"
+          vehsPerHour="400"
           departSpeed="max"
           departPos="base"
           departLane="best" />
@@ -16,7 +16,7 @@
     <!-- Flujo Oeste → Este: 1200 vehículos/hora (1 cada ~3 segundos) -->
     <flow id="flow_we" route="route_we"
           begin="0" end="2000"
-          vehsPerHour="1200"
+          vehsPerHour="1500"
           departSpeed="max"
           departPos="base"
           departLane="best" />

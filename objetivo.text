@@ -1,0 +1,7 @@
+#TODO PRIORIDAD:
+
+vehiculos con mayor tiempo de espera
+canales con mucha congestion
+crear un balance entre ambas condiciones
+ajustar los tiempo en verde y en rojo en base a dichas condiciones
+disminuir tiempos muertos (luz verde sin flujo y sobre todo cuando hay otros autos esperando en otros canales para pasar)
