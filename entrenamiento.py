@@ -110,7 +110,7 @@ class ProgressLoggerCallback(BaseCallback):
 env = sumo_rl.SumoEnvironment(
     net_file=NET_FILE,
     route_file=ROUTE_FILE,
-    out_csv_name=os.path.join(OUTPUT_DIR, "trigal_train"),
+    #out_csv_name=os.path.join(OUTPUT_DIR, "trigal_train"),
     use_gui=False,
     num_seconds=SIM_SECONDS,
     single_agent=True,
