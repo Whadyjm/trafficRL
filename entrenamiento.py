@@ -1,20 +1,27 @@
 # entrenamiento.py
 # Entrenamiento optimizado: 3600 segundos = duración real del tráfico
-
+#2000 timesteps - 1 min
+#10000 timesteps - 4 min
+#50000 timesteps - 14 min
 import os
 import sumo_rl
 from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import BaseCallback
 import matplotlib.pyplot as plt
 import pandas as pd
+from datetime import datetime
+
+# === FECHA Y HORA ACTUAL ===
+ahora = datetime.now()
+fecha_hora = ahora.strftime("%Y-%m-%d %H:%M:%S")
 
 # === CONFIGURACIÓN ===
 NET_FILE = "trigal.net.xml"
-ROUTE_FILE = "trigal.rou.xml"
+ROUTE_FILE = "trigal_flujo_bajo.rou.xml"
 MODEL_PATH = "trigal_model.zip"
 OUTPUT_DIR = "outputs"
 LOG_CSV = os.path.join(OUTPUT_DIR, "progreso_entrenamiento.csv")
-TIMESTEPS = 500        
+TIMESTEPS = 50000        
 SIM_SECONDS = 3600      
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -92,7 +99,7 @@ else:
     model = PPO("MlpPolicy", env, learning_rate=3e-4, verbose=1)
 
 # === ENTRENAR ===
-print(f"\nINICIANDO ENTRENAMIENTO...")
+print(f"\nINICIANDO ENTRENAMIENTO... [{fecha_hora}]")
 model.learn(total_timesteps=TIMESTEPS, callback=callback)
 print("ENTRENAMIENTO TERMINADO")
 
@@ -102,4 +109,4 @@ print(f"Modelo guardado: {MODEL_PATH}")
 callback.save_and_plot()
 
 env.close()
-print("\n¡TODO COMPLETO! Revisa el gráfico y CSV.")
+print(f"\n¡ENTRENAMIENTO COMPLETADO A LAS {datetime.now().strftime('%H:%M:%S')}!")

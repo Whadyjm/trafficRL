@@ -7,7 +7,7 @@
 
     <input>
         <net-file value="trigal.net.xml"/>
-        <route-files value="trigal.rou.xml"/>
+        <route-files value="trigal_flujo_bajo.rou.xml"/>
     </input>
 
 </sumoConfiguration>
