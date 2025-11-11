@@ -21,7 +21,7 @@ ROUTE_FILE = "trigal_flujo_bajo.rou.xml"
 MODEL_PATH = "trigal_model.zip"
 OUTPUT_DIR = "outputs"
 LOG_CSV = os.path.join(OUTPUT_DIR, "progreso_entrenamiento.csv")
-TIMESTEPS = 500_000        
+TIMESTEPS = 1_000_000        
 SIM_SECONDS = 3600      
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
