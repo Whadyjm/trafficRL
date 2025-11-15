@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<routes xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/routes_file.xsd">
+    <!-- FLUJO COMBINADO: Bajo (100 autos/h, probability=0.0278) para f_0 a f_3 -->
+    <flow id="f_0" begin="0.00" from="-E3" to="-E0.101" end="3600.00" probability="0.0278"/>
+    <flow id="f_1" begin="0.00" from="-E3" to="E1" end="3600.00" probability="0.0278"/>
+    <flow id="f_2" begin="0.00" from="-E0" to="-E0.101" end="3600.00" probability="0.0278"/>
+    <flow id="f_3" begin="0.00" from="-E0" to="E3" end="3600.00" probability="0.0278"/>
+
+    <!-- FLUJO COMBINADO: Medio (300 autos/h, probability=0.0833) para f_4 a f_6 -->
+    <flow id="f_4" begin="0.00" from="E0" to="E3" end="3600.00" probability="0.0833"/>
+    <flow id="f_5" begin="0.00" from="E0" to="E0.88" end="3600.00" probability="0.0833"/>
+    <flow id="f_6" begin="0.00" from="E0" to="E1" end="3600.00" probability="0.0833"/>
+
+    <!-- FLUJO COMBINADO: Alto (600 autos/h, probability=0.1667) para f_7 a f_9 -->
+    <flow id="f_7" begin="0.00" from="-E1" to="E3" end="3600.00" probability="0.1667"/>
+    <flow id="f_8" begin="0.00" from="-E1" to="-E0.101" end="3600.00" probability="0.1667"/>
+    <flow id="f_9" begin="0.00" from="-E1" to="E0.88" end="3600.00" probability="0.1667"/>
+</routes>
