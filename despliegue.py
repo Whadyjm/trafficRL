@@ -14,7 +14,7 @@ env = sumo_rl.SumoEnvironment(
     single_agent=True,
 )
 
-model = PPO.load("trigal_model")
+model = PPO.load("trigal_model_advanced")
  
 obs, _ = env.reset()
 done = False
