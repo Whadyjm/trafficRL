@@ -9,12 +9,12 @@
     <flow id="f_1" begin="0.00" end="3600.00" probability="0.02779999999999999832" from="-E3" to="E1"/>
     <flow id="f_2" begin="0.00" end="3600.00" probability="0.02779999999999999832" from="-E0" to="-E0.101"/>
     <flow id="f_3" begin="0.00" end="3600.00" probability="0.02779999999999999832" from="-E0" to="E3"/>
-    <flow id="f_4" begin="0.00" end="3600.00" probability="0.08329999999999999905" from="E0" to="E3"/>
-    <flow id="f_5" begin="0.00" end="3600.00" probability="0.08329999999999999905" from="E0" to="E0.88"/>
-    <flow id="f_6" begin="0.00" end="3600.00" probability="0.08329999999999999905" from="E0" to="E1"/>
-    <flow id="f_7" begin="0.00" end="3600.00" probability="0.16669999999999998708" from="-E1" to="E3"/>
-    <flow id="f_8" begin="0.00" end="3600.00" probability="0.16669999999999998708" from="-E1" to="-E0.101"/>
-    <flow id="f_9" begin="0.00" end="3600.00" probability="0.16669999999999998708" from="-E1" to="E0.88"/>
+    <flow id="f_4" begin="0.00" end="3600.00" probability="0.02779999999999999832" from="E0" to="E3"/>
+    <flow id="f_5" begin="0.00" end="3600.00" probability="0.02779999999999999832" from="E0" to="E0.88"/>
+    <flow id="f_6" begin="0.00" end="3600.00" probability="0.02779999999999999832" from="E0" to="E1"/>
+    <flow id="f_7" begin="0.00" end="3600.00" probability="0.02779999999999999832" from="-E1" to="E3"/>
+    <flow id="f_8" begin="0.00" end="3600.00" probability="0.02779999999999999832" from="-E1" to="-E0.101"/>
+    <flow id="f_9" begin="0.00" end="3600.00" probability="0.02779999999999999832" from="-E1" to="E0.88"/>
     <personFlow id="pf_0" begin="0.00" end="3600.00" period="exp(0.05)">
         <personTrip from="-E0" to="-E0.101"/>
     </personFlow>
