@@ -16,12 +16,12 @@ ahora = datetime.now()
 fecha_hora_inicio = ahora.strftime("%Y-%m-%d %H:%M:%S")
 
 # === CONFIGURACIÓN ===
-NET_FILE = "trigal.net.xml"
-ROUTE_FILE = "trigal_flujo_mixto.rou.xml"
-MODEL_PATH = "trigal_model_advanced.zip"
+NET_FILE = "trigal_peatones.net.xml"
+ROUTE_FILE = "trigal_peatones.rou.xml"
+MODEL_PATH = "trigal_model_peatones.zip"
 OUTPUT_DIR = "outputs"
 LOG_CSV = os.path.join(OUTPUT_DIR, "progreso_entrenamiento.csv")
-TIMESTEPS = 50_000        
+TIMESTEPS = 10_000        
 SIM_SECONDS = 3600      
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -111,7 +111,7 @@ env = sumo_rl.SumoEnvironment(
     net_file=NET_FILE,
     route_file=ROUTE_FILE,
     #out_csv_name=os.path.join(OUTPUT_DIR, "trigal_train"),
-    use_gui=False,
+    use_gui=True,
     num_seconds=SIM_SECONDS,
     single_agent=True,
     min_green=10,
