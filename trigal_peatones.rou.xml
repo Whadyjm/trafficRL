@@ -1,19 +1,36 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
-<!-- generated on 2025-11-16T19:01:46.351819-04:00 by Eclipse SUMO netedit 1.25.0
+<!-- generated on 2025-11-16T22:11:31.467100-04:00 by Eclipse SUMO netedit 1.25.0
 -->
 
 <routes xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/routes_file.xsd">
     <!-- Vehicles, persons and containers (sorted by depart) -->
-    <flow id="f_0" begin="0.00" end="3600.00" perHour="1800.00" from="-E3" to="E1"/>
-    <flow id="f_1" begin="0.00" end="3600.00" perHour="1800.00" from="-E3" to="-E0.101"/>
-    <flow id="f_2" begin="0.00" end="3600.00" perHour="1800.00" from="-E0" to="E3"/>
-    <flow id="f_3" begin="0.00" end="3600.00" perHour="1800.00" from="-E0" to="-E0.101"/>
-    <flow id="f_4" begin="0.00" end="3600.00" perHour="1800.00" from="-E0" to="E1"/>
-    <flow id="f_5" begin="0.00" end="3600.00" perHour="1800.00" from="-E1" to="E0.88"/>
-    <flow id="f_6" begin="0.00" end="3600.00" perHour="1800.00" from="-E1" to="-E0.101"/>
-    <flow id="f_7" begin="0.00" end="3600.00" perHour="1800.00" from="-E1" to="E3"/>
-    <personFlow id="pf_0" begin="0.00" end="3600.00" period="exp(0.15)">
+    <flow id="f_0" begin="0.00" end="3600.00" probability="0.02779999999999999832" from="-E3" to="-E0.101"/>
+    <flow id="f_1" begin="0.00" end="3600.00" probability="0.02779999999999999832" from="-E3" to="E1"/>
+    <flow id="f_2" begin="0.00" end="3600.00" probability="0.02779999999999999832" from="-E0" to="-E0.101"/>
+    <flow id="f_3" begin="0.00" end="3600.00" probability="0.02779999999999999832" from="-E0" to="E3"/>
+    <flow id="f_4" begin="0.00" end="3600.00" probability="0.08329999999999999905" from="E0" to="E3"/>
+    <flow id="f_5" begin="0.00" end="3600.00" probability="0.08329999999999999905" from="E0" to="E0.88"/>
+    <flow id="f_6" begin="0.00" end="3600.00" probability="0.08329999999999999905" from="E0" to="E1"/>
+    <flow id="f_7" begin="0.00" end="3600.00" probability="0.16669999999999998708" from="-E1" to="E3"/>
+    <flow id="f_8" begin="0.00" end="3600.00" probability="0.16669999999999998708" from="-E1" to="-E0.101"/>
+    <flow id="f_9" begin="0.00" end="3600.00" probability="0.16669999999999998708" from="-E1" to="E0.88"/>
+    <personFlow id="pf_0" begin="0.00" end="3600.00" period="exp(0.05)">
         <personTrip from="-E0" to="-E0.101"/>
+    </personFlow>
+    <personFlow id="pf_1" begin="0.00" end="3600.00" period="exp(0.05)">
+        <personTrip from="E3" to="-E1"/>
+    </personFlow>
+    <personFlow id="pf_2" begin="0.00" end="3600.00" period="exp(0.05)">
+        <personTrip from="E1" to="-E3"/>
+    </personFlow>
+    <personFlow id="pf_3" begin="0.00" end="3600.00" period="exp(0.05)">
+        <personTrip from="E0" to="E0.88"/>
+    </personFlow>
+    <personFlow id="pf_4" begin="0.00" end="3600.00" period="exp(0.05)">
+        <personTrip from="-E3" to="E1"/>
+    </personFlow>
+    <personFlow id="pf_5" begin="0.00" end="3600.00" period="exp(0.05)">
+        <personTrip from="-E1" to="E3"/>
     </personFlow>
 </routes>

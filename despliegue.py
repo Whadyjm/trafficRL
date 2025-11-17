@@ -6,8 +6,8 @@ import os
 os.makedirs("outputs", exist_ok=True)
 
 env = sumo_rl.SumoEnvironment(
-    net_file="trigal.net.xml",
-    route_file="trigal.rou.xml",
+    net_file="trigal_peatones.net.xml",
+    route_file="trigal_peatones.rou.xml",
     out_csv_name="outputs/trigal_test",
     use_gui=True,          # Activa la GUI para ver el semáforo inteligente
     num_seconds=3600,      # 1 hora de simulación
