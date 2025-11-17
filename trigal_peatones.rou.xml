@@ -15,22 +15,22 @@
     <flow id="f_7" begin="0.00" end="3600.00" probability="0.02779999999999999832" from="-E1" to="E3"/>
     <flow id="f_8" begin="0.00" end="3600.00" probability="0.02779999999999999832" from="-E1" to="-E0.101"/>
     <flow id="f_9" begin="0.00" end="3600.00" probability="0.02779999999999999832" from="-E1" to="E0.88"/>
-    <personFlow id="pf_0" begin="0.00" end="3600.00" period="exp(0.05)">
+    <personFlow id="pf_0" begin="0.00" end="3600.00" period="exp(0.015)">
         <personTrip from="-E0" to="-E0.101"/>
     </personFlow>
-    <personFlow id="pf_1" begin="0.00" end="3600.00" period="exp(0.05)">
+    <personFlow id="pf_1" begin="0.00" end="3600.00" period="exp(0.015)">
         <personTrip from="E3" to="-E1"/>
     </personFlow>
-    <personFlow id="pf_2" begin="0.00" end="3600.00" period="exp(0.05)">
+    <personFlow id="pf_2" begin="0.00" end="3600.00" period="exp(0.015)">
         <personTrip from="E1" to="-E3"/>
     </personFlow>
-    <personFlow id="pf_3" begin="0.00" end="3600.00" period="exp(0.05)">
+    <personFlow id="pf_3" begin="0.00" end="3600.00" period="exp(0.015)">
         <personTrip from="E0" to="E0.88"/>
     </personFlow>
-    <personFlow id="pf_4" begin="0.00" end="3600.00" period="exp(0.05)">
+    <personFlow id="pf_4" begin="0.00" end="3600.00" period="exp(0.015)">
         <personTrip from="-E3" to="E1"/>
     </personFlow>
-    <personFlow id="pf_5" begin="0.00" end="3600.00" period="exp(0.05)">
+    <personFlow id="pf_5" begin="0.00" end="3600.00" period="exp(0.015)">
         <personTrip from="-E1" to="E3"/>
     </personFlow>
 </routes>
