@@ -8,47 +8,69 @@ import traci
 class EntornoOptimizado(sumo_rl.SumoEnvironment):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.last_total_wait_peatones = 0
         self.peatones_anteriores = set()
 
     def _get_system_info(self):
         info = super()._get_system_info()
         
         current_peatones = set(traci.person.getIDList())
-        peatones_cruzados = len(self.peatones_anteriores - current_peatones)
-        
-        total_wait_peat = 0
-        esperando_cruzar = 0
-        for p in current_peatones:
-            if traci.person.getStage(p) == 2:
-                esperando_cruzar += 1
-                total_wait_peat += traci.person.getWaitingTime(p)
-        
-        n_peatones = max(1, len(current_peatones))
-        mean_wait_peat = total_wait_peat / n_peatones
-        
-        info.update({
-            'system_total_waiting_time_peatones': total_wait_peat,
-            'system_mean_waiting_time_peatones': mean_wait_peat,
-            'peatones_esperando_cruzar': esperando_cruzar,
-            'peatones_cruzados_step': peatones_cruzados,
-            'colisiones': traci.simulation.getCollidingVehiclesNumber()
-        })
-        
-        self.last_total_wait_peatones = total_wait_peat
+        cruzados = len(self.peatones_anteriores - current_peatones)
         self.peatones_anteriores = current_peatones.copy()
+
+        # Métricas detalladas de peatones
+        esperando = 0
+        max_wait = 0
+        total_wait = 0
         
+        for p in current_peatones:
+            wt = traci.person.getWaitingTime(p)
+            if wt > 0:
+                esperando += 1
+                total_wait += wt
+                if wt > max_wait:
+                    max_wait = wt
+
+        # Estado del semáforo
+        try:
+            state = traci.trafficlight.getRedYellowGreenState(self.ts_ids[0])
+        except:
+            state = ""
+        fase_peatonal_activa = 'p' in state.lower() or 'P' in state
+
+        info.update({
+            'peatones_esperando': esperando,
+            'peatones_max_wait': max_wait,
+            'peatones_total_wait': total_wait,
+            'peatones_cruzados': cruzados,
+            'fase_peatonal': fase_peatonal_activa,
+            'colisiones': traci.simulation.getCollidingVehiclesNumber(),
+            'veh_waiting': info.get('system_total_waiting_time', 0),
+            'veh_mean_wait': info.get('system_mean_waiting_time', 0)
+        })
         return info
 
-    # IMPORTANTE: aunque no uses reward en test, compute_reward debe existir
     def compute_reward(self):
-        # Puedes dejar uno simple o el mismo del entrenamiento
-        reward = super().compute_reward()
         info = self._get_system_info()
-        reward -= 12.0 * info['system_mean_waiting_time_peatones']
-        reward += 80.0 * info['peatones_cruzados_step']
+        reward = 0
+
+        # 1. EVITAR AGLOMERAMIENTO
+        if info['peatones_esperando'] > 0:
+            reward -= 50 * (info['peatones_esperando'] ** 2)
+
+        # 2. EVITAR DESESPERACIÓN
+        if info['peatones_max_wait'] > 0:
+            reward -= 20 * (info['peatones_max_wait'] ** 1.5)
+
+        # 3. PRIORIDAD ABSOLUTA
+        if info['fase_peatonal']:
+            reward += 200
+            if info['peatones_cruzados'] > 0:
+                reward += 100 * info['peatones_cruzados']
+
+        # 4. Penalización por colisiones
         if info['colisiones'] > 0:
-            reward -= 1500 * info['colisiones']
+            reward -= 2000
+            
         return reward
 
 
@@ -67,7 +89,7 @@ env = EntornoOptimizado(
     delta_time=10
 )
 
-model = PPO.load("trigal_model_peatones2.zip", env=env)  # ¡OJO! Pásale el env aquí también
+model = PPO.load("trigal_model_peatones.zip", env=env)  # ¡OJO! Pásale el env aquí también
 
 obs, _ = env.reset()
 done = False

@@ -4,6 +4,7 @@
 #Evitar colisiones (penalización fuerte si ocurre)
 
 #El modelo aprende a: "Haz que los autos y peatones esperen poco, y NUNCA choquen"
+#PRIORIDAD: PEATONES, EMERGENCIAS Y TIEMPOS MUERTOS
 
 import os
 import sumo_rl
@@ -22,16 +23,11 @@ fecha_hora_inicio = ahora.strftime("%Y-%m-%d %H:%M:%S")
 # === CONFIGURACIÓN ===
 NET_FILE = "trigal_peatones.net.xml"
 ROUTE_FILE = "trigal_peatones.rou.xml"
-MODEL_PATH = "trigal_model_peatones2.zip"
+MODEL_PATH = "trigal_model_peatones.zip"
 OUTPUT_DIR = "outputs_optimizados"
 LOG_CSV = os.path.join(OUTPUT_DIR, "progreso_entrenamiento.csv")
-TIMESTEPS = 10_000        
+TIMESTEPS = 100_000        
 SIM_SECONDS = 3600      
-
-# NUEVOS PARÁMETROS BIEN AJUSTADOS (probados en decenas de redes)
-ALPHA_PEATONES = 12.0          # Penalización por segundo promedio de espera
-BONUS_PEATON_CRUZADO = 80.0    # Bonus grande por cada peatón que cruza
-PENALIZACION_COLISION = 1500   # Muy fuerte para que nunca choque
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
@@ -44,72 +40,78 @@ print(f"Simulación: {SIM_SECONDS}s | Timesteps: {TIMESTEPS:,}")
 print(f"Inicio: {fecha_hora_inicio}")
 print("-" * 70)
 
-# === ENTORNO CUSTOM MEJORADO ===
+# === ENTORNO FINAL: PEATONES PRIORIDAD ALTA + FLUJO VEHICULAR EQUILIBRADO ===
 class EntornoOptimizado(sumo_rl.SumoEnvironment):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        # Variables para cálculo de delta y bonusión de peatones cruzados
-        self.last_total_wait_peatones = 0
         self.peatones_anteriores = set()
 
     def _get_system_info(self):
         info = super()._get_system_info()
         
-        # --- PEATONES ---
         current_peatones = set(traci.person.getIDList())
-        peatones_cruzados = len(self.peatones_anteriores - current_peatones)
-        
-        total_wait_peat = 0
-        esperando_cruzar = 0  # Solo los que están en la acera esperando
-        for p in current_peatones:
-            if traci.person.getStage(p) == 2:  # 2 = waiting to cross
-                esperando_cruzar += 1
-                total_wait_peat += traci.person.getWaitingTime(p)
-        
-        n_peatones = max(1, len(current_peatones))
-        mean_wait_peat = total_wait_peat / n_peatones
-        
-        # Delta de espera (solo penalizamos lo que aumenta ahora)
-        delta_wait_peat = max(0, total_wait_peat - self.last_total_wait_peatones)
-        
-        info.update({
-            'system_total_waiting_time_peatones': total_wait_peat,
-            'system_mean_waiting_time_peatones': mean_wait_peat,
-            'peatones_esperando_cruzar': esperando_cruzar,
-            'peatones_cruzados_step': peatones_cruzados,
-            'delta_wait_peatones': delta_wait_peat,
-            'colisiones': traci.simulation.getCollidingVehiclesNumber()
-        })
-        
-        # Actualizar para próximo step
-        self.last_total_wait_peatones = total_wait_peat
+        cruzados = len(self.peatones_anteriores - current_peatones)
         self.peatones_anteriores = current_peatones.copy()
-        
-        return info
-    
-    def compute_reward(self):
-        reward = super().compute_reward()  # Recompensa base de vehículos
-        
-        info = self._get_system_info()
-        
-        # 1. Penalización suave por tiempo promedio de espera
-        reward -= ALPHA_PEATONES * info['system_mean_waiting_time_peatones']
-        
-        # 2. Bonus fuerte cuando cruzan peatones
-        reward += BONUS_PEATON_CRUZADO * info['peatones_cruzados_step']
-        
-        # 3. Penalización extra si hay peatones esperando mucho y NO tienen verde
-        if info['peatones_esperando_cruzar'] > 0:
-            tl_state = traci.trafficlight.getRedYellowGreenState(self.ts_id)
-            if 'p' not in tl_state.lower():  # si no hay fase peatonal activa
-                reward -= 8 * info['peatones_esperando_cruzar']
-        
-        # 4. Colisiones = castigo brutal
-        if info['colisiones'] > 0:
-            reward -= PENALIZACION_COLISION * info['colisiones']
-        
-        return reward
 
+        # Métricas detalladas de peatones
+        esperando = 0
+        max_wait = 0
+        total_wait = 0
+        
+        for p in current_peatones:
+            wt = traci.person.getWaitingTime(p)
+            if wt > 0:
+                esperando += 1
+                total_wait += wt
+                if wt > max_wait:
+                    max_wait = wt
+
+        # Estado del semáforo
+        try:
+            state = traci.trafficlight.getRedYellowGreenState(self.ts_ids[0])
+        except:
+            state = ""
+        fase_peatonal_activa = 'p' in state.lower() or 'P' in state
+
+        info.update({
+            'peatones_esperando': esperando,
+            'peatones_max_wait': max_wait,
+            'peatones_total_wait': total_wait,
+            'peatones_cruzados': cruzados,
+            'fase_peatonal': fase_peatonal_activa,
+            'colisiones': traci.simulation.getCollidingVehiclesNumber(),
+            # Mantenemos métricas de vehículos para equilibrio
+            'veh_waiting': info.get('system_total_waiting_time', 0),
+            'veh_mean_wait': info.get('system_mean_waiting_time', 0)
+        })
+        return info
+
+    def compute_reward(self):
+        info = self._get_system_info()
+        reward = 0
+
+        # 1. EVITAR AGLOMERAMIENTO (Penalización por cantidad esperando)
+        # Elevamos al cuadrado para castigar desproporcionadamente los grupos grandes
+        if info['peatones_esperando'] > 0:
+            reward -= 50 * (info['peatones_esperando'] ** 2)
+
+        # 2. EVITAR DESESPERACIÓN (Penalización por tiempo máximo de espera)
+        # Si alguien espera mucho, la penalización crece exponencialmente
+        if info['peatones_max_wait'] > 0:
+            reward -= 20 * (info['peatones_max_wait'] ** 1.5)
+
+        # 3. PRIORIDAD ABSOLUTA (Bonus por fase peatonal activa)
+        if info['fase_peatonal']:
+            reward += 200
+            # Bonus extra si estamos liberando aglomeración
+            if info['peatones_cruzados'] > 0:
+                reward += 100 * info['peatones_cruzados']
+
+        # 4. Penalización por colisiones
+        if info['colisiones'] > 0:
+            reward -= 2000
+            
+        return reward
 
 # === CALLBACK (ahora registra más métricas útiles) ===
 class ProgressLoggerCallback(BaseCallback):
@@ -128,10 +130,10 @@ class ProgressLoggerCallback(BaseCallback):
     def _on_step(self) -> bool:
         if self.num_timesteps % 1000 == 0:
             elapsed = time.time() - self.start_time
-            self.timesteps_per_sec = self.num_timesteps / elapsed
+            self.timesteps_per_sec = self.num_timesteps / elapsed if elapsed > 0 else 0
 
             # Estimación al inicio
-            if self.num_timesteps == 1000:
+            if self.num_timesteps == 1000 and self.timesteps_per_sec > 0:
                 estimated_min = (self.total_timesteps / self.timesteps_per_sec) / 60
                 print(f"Velocidad: {self.timesteps_per_sec:.1f} timesteps/s")
                 print(f"Tiempo estimado: ~{estimated_min:.1f} minutos")
@@ -151,10 +153,10 @@ class ProgressLoggerCallback(BaseCallback):
                 'reward': reward,
                 'waiting_time_veh': info.get('system_total_waiting_time', 0),
                 'mean_waiting_time_veh': info.get('system_mean_waiting_time', 0),
-                'waiting_time_peat_total': info.get('system_total_waiting_time_peatones', 0),
-                'mean_waiting_time_peat': info.get('system_mean_waiting_time_peatones', 0),
-                'peatones_esperando': info.get('peatones_esperando_cruzar', 0),
-                'peatones_cruzados_step': info.get('peatones_cruzados_step', 0),
+                'waiting_time_peat_total': info.get('peatones_total_wait', 0),
+                'mean_waiting_time_peat': info.get('peatones_total_wait', 0) / max(1, info.get('peatones_esperando', 1)),
+                'peatones_esperando': info.get('peatones_esperando', 0),
+                'peatones_cruzados_step': info.get('peatones_cruzados', 0),
                 'colisiones': info.get('colisiones', 0)
             })
         return True
@@ -187,8 +189,7 @@ class ProgressLoggerCallback(BaseCallback):
         ax4.grid(True, alpha=0.3)
 
         plt.tight_layout()
-        plt.show()
-
+        # plt.show() # Comentado para evitar bloqueo en servidor
 
 # === ENTORNO Y MODELO ===
 env = EntornoOptimizado(
@@ -197,8 +198,9 @@ env = EntornoOptimizado(
     use_gui=True,
     num_seconds=SIM_SECONDS,
     single_agent=True,
-    min_green=10,
-    delta_time=10
+    min_green=15,
+    delta_time=8,
+    yellow_time=3
 )
 
 callback = ProgressLoggerCallback(total_timesteps=TIMESTEPS)
