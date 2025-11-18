@@ -71,7 +71,7 @@ class EntornoOptimizado(sumo_rl.SumoEnvironment):
             state = traci.trafficlight.getRedYellowGreenState(self.ts_ids[0])
         except:
             state = ""
-        fase_peatonal_activa = 'p' in state.lower() or 'P' in state
+        fase_peatonal_activa = state.endswith("GGGG")
 
         info.update({
             'peatones_esperando': esperando,
