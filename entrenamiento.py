@@ -26,7 +26,7 @@ ROUTE_FILE = "trigal_peatones.rou.xml"
 MODEL_PATH = "trigal_model_peatones.zip"
 OUTPUT_DIR = "outputs_optimizados"
 LOG_CSV = os.path.join(OUTPUT_DIR, "progreso_entrenamiento.csv")
-TIMESTEPS = 5_000        
+TIMESTEPS = 100_000        
 SIM_SECONDS = 3600      
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -83,10 +83,23 @@ class EntornoOptimizado(sumo_rl.SumoEnvironment):
         try:
             state = traci.trafficlight.getRedYellowGreenState(self.ts_ids[0])
         except:
-            state = ""
+            state = "rrrr"
+            
         fase_peatonal_activa = state.endswith("GGGG")
 
+        # Detección de Infracciones (Jaywalking)
+        # Si el semáforo peatonal (últimos 4) NO tiene verde, y hay peatones en los cruces (edges internos ":")
+        peatones_infraccion = 0
+        sem_peatones_rojo = 'G' not in state[-4:]
+        
+        if sem_peatones_rojo:
+            for p in current_peatones:
+                # Si está en un cruce (interno, empieza con :)
+                if traci.person.getRoadID(p).startswith(":"):
+                    peatones_infraccion += 1
+
         info.update({
+            'peatones_infraccion': peatones_infraccion,
             'peatones_esperando': peat_esperando,
             'peatones_max_wait': peat_max_wait,
             'peatones_total_wait': peat_total_wait,
@@ -109,7 +122,7 @@ class EntornoOptimizado(sumo_rl.SumoEnvironment):
         # === 1. PEATONES (Prioridad Alta pero Equilibrada) ===
         # Aglomeración: Penalización cuadrática
         if info['peatones_esperando'] > 0:
-            reward -= 50 * (info['peatones_esperando'] ** 2)
+            reward -= 100 * (info['peatones_esperando'] ** 2)
             
         # Frustración Peatonal: Penalización exponencial por tiempo máximo
         if info['peatones_max_wait'] > 0:
@@ -132,7 +145,7 @@ class EntornoOptimizado(sumo_rl.SumoEnvironment):
         # Bonus suave por fase peatonal activa SOLO si hay demanda
         if info['fase_peatonal']:
             if info['peatones_esperando'] > 0 or info['peatones_cruzados'] > 0:
-                reward += 50
+                reward += 100
             else:
                 # Pequeña penalización si está en verde para peatones sin nadie (ineficiente)
                 reward -= 10
@@ -141,6 +154,10 @@ class EntornoOptimizado(sumo_rl.SumoEnvironment):
         if info['colisiones'] > 0:
             reward -= 2000
             
+        # Penalización por Infracción (Jaywalking)
+        if info['peatones_infraccion'] > 0:
+            reward -= 100 * info['peatones_infraccion']
+
         return reward
 
 # === CALLBACK (ahora registra más métricas útiles) ===
@@ -158,6 +175,14 @@ class ProgressLoggerCallback(BaseCallback):
         print("Estimando tiempo... (primeros 1000 timesteps)")
 
     def _on_step(self) -> bool:
+        # === NUEVO: Contador en tiempo real ===
+        info = self.locals.get('infos', [{}])[0]
+        peat_waiting = info.get('peatones_esperando', 0)
+        veh_waiting = info.get('veh_esperando', 0)
+        
+        # Imprimir estado actual (usamos \r para sobrescribir la línea)
+        print(f"\rStep: {self.num_timesteps} | Peatones: {peat_waiting} | Autos: {veh_waiting}   ", end="", flush=True)
+
         if self.num_timesteps % 1000 == 0:
             elapsed = time.time() - self.start_time
             self.timesteps_per_sec = self.num_timesteps / elapsed if elapsed > 0 else 0
@@ -165,7 +190,7 @@ class ProgressLoggerCallback(BaseCallback):
             # Estimación al inicio
             if self.num_timesteps == 1000 and self.timesteps_per_sec > 0:
                 estimated_min = (self.total_timesteps / self.timesteps_per_sec) / 60
-                print(f"Velocidad: {self.timesteps_per_sec:.1f} timesteps/s")
+                print(f"\nVelocidad: {self.timesteps_per_sec:.1f} timesteps/s")
                 print(f"Tiempo estimado: ~{estimated_min:.1f} minutos")
 
             # Progreso cada 10%
@@ -173,9 +198,8 @@ class ProgressLoggerCallback(BaseCallback):
             if progress >= 0.1 and abs(progress - self.last_print) >= 0.1:
                 self.last_print = progress
                 bar = "█" * int(20 * progress) + "░" * (20 - int(20 * progress))
-                print(f"Progreso: [{bar}] {progress:.1%}")
+                print(f"\nProgreso: [{bar}] {progress:.1%}")
 
-            info = self.locals.get('infos', [{}])[0]
             reward = self.locals.get('rewards', [0])[0]
 
             self.data.append({
@@ -187,7 +211,8 @@ class ProgressLoggerCallback(BaseCallback):
                 'mean_waiting_time_peat': info.get('peatones_total_wait', 0) / max(1, info.get('peatones_esperando', 1)),
                 'peatones_esperando': info.get('peatones_esperando', 0),
                 'peatones_cruzados_step': info.get('peatones_cruzados', 0),
-                'colisiones': info.get('colisiones', 0)
+                'colisiones': info.get('colisiones', 0),
+                'infracciones': info.get('peatones_infraccion', 0)
             })
         return True
 
