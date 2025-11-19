@@ -15,6 +15,8 @@ import pandas as pd
 from datetime import datetime
 import time
 import traci  # ¡Nuevo! Para acceder directamente a datos de peatones y colisiones
+import numpy as np
+from gymnasium import spaces
 
 # === FECHA Y HORA ACTUAL ===
 ahora = datetime.now()
@@ -23,7 +25,7 @@ fecha_hora_inicio = ahora.strftime("%Y-%m-%d %H:%M:%S")
 # === CONFIGURACIÓN ===
 NET_FILE = "trigal_peatones.net.xml"
 ROUTE_FILE = "trigal_peatones.rou.xml"
-MODEL_PATH = "trigal_model_peatones.zip"
+MODEL_PATH = "trigal_model_ambulancia.zip"
 OUTPUT_DIR = "outputs_optimizados"
 LOG_CSV = os.path.join(OUTPUT_DIR, "progreso_entrenamiento.csv")
 TIMESTEPS = 100_000        
@@ -31,14 +33,50 @@ SIM_SECONDS = 3600
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-ahora = datetime.now()
-fecha_hora_inicio = ahora.strftime("%Y-%m-%d %H:%M:%S")
-
 print("=" * 70)
 print("INICIANDO ENTRENAMIENTO OPTIMIZADO - PEATONES CON PRIORIDAD REAL")
 print(f"Simulación: {SIM_SECONDS}s | Timesteps: {TIMESTEPS:,}")
 print(f"Inicio: {fecha_hora_inicio}")
 print("-" * 70)
+
+# === OBSERVATION CLASS ===
+class AmbulanceObservationFunction(sumo_rl.ObservationFunction):
+    def __init__(self, ts):
+        self.ts = ts
+
+    def __call__(self, ts=None):
+        # Support calling with or without argument
+        if ts is None:
+            ts = self.ts
+            
+        # Obtener observación estándar (fases, colas, etc.)
+        phase_id = [1 if ts.green_phase == i else 0 for i in range(ts.num_green_phases)]
+        min_green = [1 if ts.time_since_last_phase_change < ts.min_green + ts.yellow_time else 0]
+        density = ts.get_lanes_density()
+        queue = ts.get_lanes_queue()
+        
+        # Detectar ambulancia
+        ambulance_approaching = 0
+        ambulance_waiting = 0
+        
+        vehicles = traci.vehicle.getIDList()
+        for v in vehicles:
+            if traci.vehicle.getTypeID(v) == "ambulancia":
+                # Distancia al semáforo (aproximada por posición en lane)
+                lane_id = traci.vehicle.getLaneID(v)
+                if lane_id in ts.lanes:
+                    ambulance_approaching = 1
+                    if traci.vehicle.getWaitingTime(v) > 0:
+                        ambulance_waiting = 1
+        
+        observation = np.array(phase_id + min_green + density + queue + [ambulance_approaching, ambulance_waiting], dtype=np.float32)
+        return observation
+
+    def observation_space(self):
+        ts = self.ts
+        # Fase (num_green_phases) + MinGreen (1) + Density (num_lanes) + Queue (num_lanes) + Ambulance (2)
+        dim = ts.num_green_phases + 1 + 2 * len(ts.lanes) + 2
+        return spaces.Box(low=0, high=1, shape=(dim,), dtype=np.float32)
 
 # === ENTORNO FINAL: PEATONES PRIORIDAD ALTA + FLUJO VEHICULAR EQUILIBRADO ===
 class EntornoOptimizado(sumo_rl.SumoEnvironment):
@@ -70,6 +108,8 @@ class EntornoOptimizado(sumo_rl.SumoEnvironment):
         veh_esperando = 0
         veh_max_wait = 0
         veh_total_wait = 0
+        ambulance_waiting_time = 0
+        ambulance_in_system = 0
         
         for v in traci.vehicle.getIDList():
             wt = traci.vehicle.getWaitingTime(v)
@@ -78,6 +118,11 @@ class EntornoOptimizado(sumo_rl.SumoEnvironment):
                 veh_total_wait += wt
                 if wt > veh_max_wait:
                     veh_max_wait = wt
+            
+            if traci.vehicle.getTypeID(v) == "ambulancia":
+                ambulance_in_system = 1
+                if wt > 0:
+                    ambulance_waiting_time = wt
 
         # Estado del semáforo
         try:
@@ -111,7 +156,11 @@ class EntornoOptimizado(sumo_rl.SumoEnvironment):
             'veh_esperando': veh_esperando,
             'veh_max_wait': veh_max_wait,
             'veh_total_wait': veh_total_wait,
-            'veh_mean_wait': veh_total_wait / max(1, veh_esperando)
+            'veh_mean_wait': veh_total_wait / max(1, veh_esperando),
+            
+            # Ambulancia
+            'ambulance_in_system': ambulance_in_system,
+            'ambulance_waiting_time': ambulance_waiting_time
         })
         return info
 
@@ -119,14 +168,22 @@ class EntornoOptimizado(sumo_rl.SumoEnvironment):
         info = self._get_system_info()
         reward = 0
 
+        # === 0. AMBULANCIA (PRIORIDAD MÁXIMA) ===
+        if info['ambulance_in_system'] > 0:
+            # Si hay ambulancia, el objetivo principal es que NO espere
+            if info['ambulance_waiting_time'] > 0:
+                reward -= 1000 * (info['ambulance_waiting_time'] ** 2) # Penalización masiva
+            else:
+                reward += 500 # Premio por mantenerla en movimiento
+
         # === 1. PEATONES (Prioridad Alta pero Equilibrada) ===
         # Aglomeración: Penalización cuadrática
         if info['peatones_esperando'] > 0:
-            reward -= 100 * (info['peatones_esperando'] ** 2)
+            reward -= 400 * (info['peatones_esperando'] ** 2)
             
         # Frustración Peatonal: Penalización exponencial por tiempo máximo
         if info['peatones_max_wait'] > 0:
-            reward -= 15 * (info['peatones_max_wait'] ** 1.6)
+            reward -= 15 * (info['peatones_max_wait'] ** 1.8)
 
         # === 2. VEHÍCULOS (Evitar Frustración Vehicular) ===
         # Aglomeración Vehicular
@@ -135,7 +192,7 @@ class EntornoOptimizado(sumo_rl.SumoEnvironment):
             
         # Frustración Vehicular: Penalización para evitar colas eternas
         if info['veh_max_wait'] > 0:
-            reward -= 10 * (info['veh_max_wait'] ** 1.5)
+            reward -= 10 * (info['veh_max_wait'])
 
         # === 3. EFICIENCIA Y FLUJO ===
         # Bonus por cruzar (Throughput)
@@ -179,9 +236,11 @@ class ProgressLoggerCallback(BaseCallback):
         info = self.locals.get('infos', [{}])[0]
         peat_waiting = info.get('peatones_esperando', 0)
         veh_waiting = info.get('veh_esperando', 0)
+        amb_waiting = info.get('ambulance_waiting_time', 0)
         
         # Imprimir estado actual (usamos \r para sobrescribir la línea)
-        print(f"\rStep: {self.num_timesteps} | Peatones: {peat_waiting} | Autos: {veh_waiting}   ", end="", flush=True)
+        amb_str = f" | AMBULANCIA ESPERANDO: {amb_waiting}s" if amb_waiting > 0 else ""
+        print(f"\rStep: {self.num_timesteps} | Peatones: {peat_waiting} | Autos: {veh_waiting}{amb_str}   ", end="", flush=True)
 
         if self.num_timesteps % 1000 == 0:
             elapsed = time.time() - self.start_time
@@ -212,7 +271,8 @@ class ProgressLoggerCallback(BaseCallback):
                 'peatones_esperando': info.get('peatones_esperando', 0),
                 'peatones_cruzados_step': info.get('peatones_cruzados', 0),
                 'colisiones': info.get('colisiones', 0),
-                'infracciones': info.get('peatones_infraccion', 0)
+                'infracciones': info.get('peatones_infraccion', 0),
+                'ambulance_waiting': info.get('ambulance_waiting_time', 0)
             })
         return True
 
@@ -225,66 +285,90 @@ class ProgressLoggerCallback(BaseCallback):
 
         fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(15, 10))
         
-        ax1.plot(df['timestep'], df['reward'], 'g-', linewidth=2)
-        ax1.set_title('Reward Total')
-        ax1.grid(True, alpha=0.3)
+        # 1. Recompensa
+        ax1.plot(df['timestep'], df['reward'], label='Recompensa', color='blue', alpha=0.6)
+        ax1.set_title('Evolución de la Recompensa')
+        ax1.set_xlabel('Timesteps')
+        ax1.set_ylabel('Reward')
+        ax1.grid(True)
 
-        ax2.plot(df['timestep'], df['mean_waiting_time_veh'], label='Vehículos', alpha=0.8)
-        ax2.plot(df['timestep'], df['mean_waiting_time_peat'], label='Peatones', alpha=0.8)
-        ax2.set_title('Tiempo Promedio de Espera')
+        # 2. Tiempos de Espera (Vehículos vs Peatones)
+        ax2.plot(df['timestep'], df['waiting_time_veh'], label='Vehículos (Total)', color='red', alpha=0.5)
+        ax2.plot(df['timestep'], df['waiting_time_peat_total'], label='Peatones (Total)', color='green', alpha=0.5)
+        ax2.set_title('Tiempo Total de Espera')
+        ax2.set_xlabel('Timesteps')
+        ax2.set_ylabel('Segundos')
         ax2.legend()
-        ax2.grid(True, alpha=0.3)
+        ax2.grid(True)
 
-        ax3.plot(df['timestep'], df['peatones_cruzados_step'].rolling(50).mean(), 'purple')
-        ax3.set_title('Peatones que Cruzan por Step (media móvil)')
-        ax3.grid(True, alpha=0.3)
-
-        ax4.plot(df['timestep'], df['colisiones'], 'r-')
-        ax4.set_title('Colisiones (deben ser 0)')
-        ax4.grid(True, alpha=0.3)
+        # 3. Peatones Esperando vs Cruzados
+        ax3.plot(df['timestep'], df['peatones_esperando'], label='Esperando', color='orange', alpha=0.6)
+        ax3.plot(df['timestep'], df['peatones_cruzados_step'].cumsum(), label='Cruzados (Acumulado)', color='purple')
+        ax3.set_title('Flujo de Peatones')
+        ax3.set_xlabel('Timesteps')
+        ax3.legend()
+        ax3.grid(True)
+        
+        # 4. Infracciones y Colisiones
+        ax4.plot(df['timestep'], df['infracciones'].cumsum(), label='Infracciones (Acum)', color='brown')
+        ax4.plot(df['timestep'], df['colisiones'].cumsum(), label='Colisiones (Acum)', color='black')
+        ax4.set_title('Seguridad e Infracciones')
+        ax4.set_xlabel('Timesteps')
+        ax4.legend()
+        ax4.grid(True)
+        
+        # 5. Ambulancia (Nuevo plot si hay datos)
+        if df['ambulance_waiting'].sum() > 0:
+             plt.figure(figsize=(10, 5))
+             plt.plot(df['timestep'], df['ambulance_waiting'], label='Tiempo Espera Ambulancia', color='red')
+             plt.title('Prioridad Ambulancia')
+             plt.xlabel('Timesteps')
+             plt.ylabel('Segundos')
+             plt.legend()
+             plt.grid(True)
+             plt.savefig(os.path.join(OUTPUT_DIR, "progreso_ambulancia.png"))
 
         plt.tight_layout()
-        # plt.show() # Comentado para evitar bloqueo en servidor
+        plt.savefig(os.path.join(OUTPUT_DIR, "progreso_entrenamiento.png"))
+        print("Gráficas guardadas.")
 
-# === ENTORNO Y MODELO ===
-env = EntornoOptimizado(
-    net_file=NET_FILE,
-    route_file=ROUTE_FILE,
-    use_gui=True,
-    num_seconds=SIM_SECONDS,
-    single_agent=True,
-    min_green=15,
-    delta_time=8,
-    yellow_time=3
-)
+# === MAIN ===
+if __name__ == "__main__":
+    # Configurar entorno
+    env = EntornoOptimizado(
+        net_file=NET_FILE,
+        route_file=ROUTE_FILE,
+        out_csv_name=os.path.join(OUTPUT_DIR, "trigal_train"),
+        use_gui=True,
+        num_seconds=SIM_SECONDS,
+        single_agent=True,
+        min_green=10,
+        delta_time=10,
+        observation_class=AmbulanceObservationFunction
+    )
 
-callback = ProgressLoggerCallback(total_timesteps=TIMESTEPS)
+    # Modelo PPO
+    model = PPO(
+        "MlpPolicy",
+        env,
+        verbose=1,
+        learning_rate=0.0003,
+        gamma=0.99,
+        n_steps=2048,
+        ent_coef=0.01
+    )
 
-if os.path.exists(MODEL_PATH):
-    print(f"CARGANDO MODELO EXISTENTE: {MODEL_PATH}")
-    model = PPO.load(MODEL_PATH, env=env)
-else:
-    print("CREANDO NUEVO MODELO PPO")
-    model = PPO("MlpPolicy", env, learning_rate=3e-4, verbose=1)
+    # Callback
+    logger = ProgressLoggerCallback(total_timesteps=TIMESTEPS)
 
-# === ENTRENAR ===
-print(f"\nINICIANDO ENTRENAMIENTO OFICIAL - {fecha_hora_inicio}")
-start_time = time.time()
-model.learn(total_timesteps=TIMESTEPS, callback=callback)
-end_time = time.time()
-
-# === RESUMEN ===
-elapsed_min = (end_time - start_time) / 60
-print("\n" + "="*70)
-print("ENTRENAMIENTO TERMINADO CON ÉXITO")
-print(f"Duración: {elapsed_min:.2f} minutos")
-print(f"Modelo guardado → {MODEL_PATH}")
-print("Los peatones ahora tienen prioridad REAL")
-print("="*70)
-
-model.save(MODEL_PATH)
-callback.save_and_plot()
-env.close()
-
-print(f"\nFinalizado a las {datetime.now().strftime('%H:%M:%S')}")
-print("Peatones felices, vehículos fluidos, cero colisiones")
+    # Entrenar
+    try:
+        model.learn(total_timesteps=TIMESTEPS, callback=logger)
+        model.save(MODEL_PATH)
+        print(f"\nModelo guardado en {MODEL_PATH}")
+    except KeyboardInterrupt:
+        print("\nEntrenamiento interrumpido por usuario. Guardando modelo parcial...")
+        model.save(MODEL_PATH + "_interrumpido")
+    finally:
+        logger.save_and_plot()
+        env.close()

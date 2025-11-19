@@ -3,6 +3,43 @@ import os
 from stable_baselines3 import PPO
 import sumo_rl
 import traci
+import numpy as np
+from gymnasium import spaces
+
+# === OBSERVATION CLASS (DEBE SER IDÉNTICA AL ENTRENAMIENTO) ===
+class AmbulanceObservationFunction(sumo_rl.ObservationFunction):
+    def __init__(self, ts):
+        self.ts = ts
+
+    def __call__(self, ts=None):
+        if ts is None:
+            ts = self.ts
+            
+        phase_id = [1 if ts.green_phase == i else 0 for i in range(ts.num_green_phases)]
+        min_green = [1 if ts.time_since_last_phase_change < ts.min_green + ts.yellow_time else 0]
+        density = ts.get_lanes_density()
+        queue = ts.get_lanes_queue()
+        
+        # Detectar ambulancia
+        ambulance_approaching = 0
+        ambulance_waiting = 0
+        
+        vehicles = traci.vehicle.getIDList()
+        for v in vehicles:
+            if traci.vehicle.getTypeID(v) == "ambulancia":
+                lane_id = traci.vehicle.getLaneID(v)
+                if lane_id in ts.lanes:
+                    ambulance_approaching = 1
+                    if traci.vehicle.getWaitingTime(v) > 0:
+                        ambulance_waiting = 1
+        
+        observation = np.array(phase_id + min_green + density + queue + [ambulance_approaching, ambulance_waiting], dtype=np.float32)
+        return observation
+
+    def observation_space(self):
+        ts = self.ts
+        dim = ts.num_green_phases + 1 + 2 * len(ts.lanes) + 2
+        return spaces.Box(low=0, high=1, shape=(dim,), dtype=np.float32)
 
 # === COPIA EXACTAMENTE TU CLASE DE ENTORNO DEL ENTRENAMIENTO ===
 class EntornoOptimizado(sumo_rl.SumoEnvironment):
@@ -34,6 +71,8 @@ class EntornoOptimizado(sumo_rl.SumoEnvironment):
         veh_esperando = 0
         veh_max_wait = 0
         veh_total_wait = 0
+        ambulance_waiting_time = 0
+        ambulance_in_system = 0
         
         for v in traci.vehicle.getIDList():
             wt = traci.vehicle.getWaitingTime(v)
@@ -42,6 +81,11 @@ class EntornoOptimizado(sumo_rl.SumoEnvironment):
                 veh_total_wait += wt
                 if wt > veh_max_wait:
                     veh_max_wait = wt
+            
+            if traci.vehicle.getTypeID(v) == "ambulancia":
+                ambulance_in_system = 1
+                if wt > 0:
+                    ambulance_waiting_time = wt
 
         # Estado del semáforo
         try:
@@ -62,50 +106,17 @@ class EntornoOptimizado(sumo_rl.SumoEnvironment):
             'veh_esperando': veh_esperando,
             'veh_max_wait': veh_max_wait,
             'veh_total_wait': veh_total_wait,
-            'veh_mean_wait': veh_total_wait / max(1, veh_esperando)
+            'veh_mean_wait': veh_total_wait / max(1, veh_esperando),
+            
+            # Ambulancia
+            'ambulance_in_system': ambulance_in_system,
+            'ambulance_waiting_time': ambulance_waiting_time
         })
         return info
 
     def compute_reward(self):
-        info = self._get_system_info()
-        reward = 0
-
-        # === 1. PEATONES (Prioridad Alta pero Equilibrada) ===
-        # Aglomeración: Penalización cuadrática
-        if info['peatones_esperando'] > 0:
-            reward -= 40 * (info['peatones_esperando'] ** 2)
-            
-        # Frustración Peatonal: Penalización exponencial por tiempo máximo
-        if info['peatones_max_wait'] > 0:
-            reward -= 15 * (info['peatones_max_wait'] ** 1.6)
-
-        # === 2. VEHÍCULOS (Evitar Frustración Vehicular) ===
-        # Aglomeración Vehicular
-        if info['veh_esperando'] > 0:
-            reward -= 5 * (info['veh_esperando'] ** 2)
-            
-        # Frustración Vehicular: Penalización para evitar colas eternas
-        if info['veh_max_wait'] > 0:
-            reward -= 10 * (info['veh_max_wait'] ** 1.5)
-
-        # === 3. EFICIENCIA Y FLUJO ===
-        # Bonus por cruzar (Throughput)
-        if info['peatones_cruzados'] > 0:
-            reward += 150 * info['peatones_cruzados'] # Gran premio por liberar peatones
-            
-        # Bonus suave por fase peatonal activa SOLO si hay demanda
-        if info['fase_peatonal']:
-            if info['peatones_esperando'] > 0 or info['peatones_cruzados'] > 0:
-                reward += 50
-            else:
-                # Pequeña penalización si está en verde para peatones sin nadie (ineficiente)
-                reward -= 10
-
-        # === 4. SEGURIDAD (Crítico) ===
-        if info['colisiones'] > 0:
-            reward -= 2000
-            
-        return reward
+        # El reward no se usa en despliegue, pero la función debe existir
+        return 0
 
 
 # === DESPLIEGUE CORRECTO ===
@@ -120,10 +131,18 @@ env = EntornoOptimizado(
     num_seconds=3600,
     single_agent=True,
     min_green=10,
-    delta_time=10
+    delta_time=10,
+    observation_class=AmbulanceObservationFunction # ¡NUEVO!
 )
 
-model = PPO.load("trigal_model_peatones.zip", env=env)  # ¡OJO! Pásale el env aquí también
+model_path = "trigal_model_ambulancia.zip"
+if not os.path.exists(model_path):
+    print(f"¡ALERTA! No se encontró el modelo {model_path}. Asegúrate de haber entrenado primero.")
+    # Fallback para pruebas si no existe, aunque fallará al cargar
+else:
+    print(f"Cargando modelo: {model_path}")
+
+model = PPO.load(model_path, env=env)
 
 obs, _ = env.reset()
 done = False
@@ -134,8 +153,15 @@ while not done:
     action, _ = model.predict(obs, deterministic=False)
     obs, reward, done, truncated, info = env.step(action)
     step += 1
-    if step % 50 == 0:
-        print(f"Step {step} - Fase actual: {info.get('step')}s")
+    
+    amb_msg = ""
+    if info.get('ambulance_in_system', 0) > 0:
+        amb_msg = " [AMBULANCIA EN CAMINO!]"
+        if info.get('ambulance_waiting_time', 0) > 0:
+            amb_msg += " [ESPERANDO!]"
+            
+    if step % 50 == 0 or amb_msg:
+        print(f"Step {step} - Fase actual: {info.get('step')}s{amb_msg}")
 
 env.close()
 print("Simulación terminada correctamente. Resultados en outputs/trigal_test_rl*.csv")
