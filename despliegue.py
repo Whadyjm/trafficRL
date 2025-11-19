@@ -18,17 +18,30 @@ class EntornoOptimizado(sumo_rl.SumoEnvironment):
         self.peatones_anteriores = current_peatones.copy()
 
         # Métricas detalladas de peatones
-        esperando = 0
-        max_wait = 0
-        total_wait = 0
+        peat_esperando = 0
+        peat_max_wait = 0
+        peat_total_wait = 0
         
         for p in current_peatones:
             wt = traci.person.getWaitingTime(p)
             if wt > 0:
-                esperando += 1
-                total_wait += wt
-                if wt > max_wait:
-                    max_wait = wt
+                peat_esperando += 1
+                peat_total_wait += wt
+                if wt > peat_max_wait:
+                    peat_max_wait = wt
+
+        # Métricas detalladas de vehículos (NUEVO PARA EQUILIBRIO)
+        veh_esperando = 0
+        veh_max_wait = 0
+        veh_total_wait = 0
+        
+        for v in traci.vehicle.getIDList():
+            wt = traci.vehicle.getWaitingTime(v)
+            if wt > 0:
+                veh_esperando += 1
+                veh_total_wait += wt
+                if wt > veh_max_wait:
+                    veh_max_wait = wt
 
         # Estado del semáforo
         try:
@@ -38,14 +51,18 @@ class EntornoOptimizado(sumo_rl.SumoEnvironment):
         fase_peatonal_activa = state.endswith("GGGG")
 
         info.update({
-            'peatones_esperando': esperando,
-            'peatones_max_wait': max_wait,
-            'peatones_total_wait': total_wait,
+            'peatones_esperando': peat_esperando,
+            'peatones_max_wait': peat_max_wait,
+            'peatones_total_wait': peat_total_wait,
             'peatones_cruzados': cruzados,
             'fase_peatonal': fase_peatonal_activa,
             'colisiones': traci.simulation.getCollidingVehiclesNumber(),
-            'veh_waiting': info.get('system_total_waiting_time', 0),
-            'veh_mean_wait': info.get('system_mean_waiting_time', 0)
+            
+            # Métricas de vehículos actualizadas
+            'veh_esperando': veh_esperando,
+            'veh_max_wait': veh_max_wait,
+            'veh_total_wait': veh_total_wait,
+            'veh_mean_wait': veh_total_wait / max(1, veh_esperando)
         })
         return info
 
@@ -53,21 +70,38 @@ class EntornoOptimizado(sumo_rl.SumoEnvironment):
         info = self._get_system_info()
         reward = 0
 
-        # 1. EVITAR AGLOMERAMIENTO
+        # === 1. PEATONES (Prioridad Alta pero Equilibrada) ===
+        # Aglomeración: Penalización cuadrática
         if info['peatones_esperando'] > 0:
-            reward -= 50 * (info['peatones_esperando'] ** 2)
-
-        # 2. EVITAR DESESPERACIÓN
+            reward -= 40 * (info['peatones_esperando'] ** 2)
+            
+        # Frustración Peatonal: Penalización exponencial por tiempo máximo
         if info['peatones_max_wait'] > 0:
-            reward -= 20 * (info['peatones_max_wait'] ** 1.5)
+            reward -= 15 * (info['peatones_max_wait'] ** 1.6)
 
-        # 3. PRIORIDAD ABSOLUTA
+        # === 2. VEHÍCULOS (Evitar Frustración Vehicular) ===
+        # Aglomeración Vehicular
+        if info['veh_esperando'] > 0:
+            reward -= 5 * (info['veh_esperando'] ** 2)
+            
+        # Frustración Vehicular: Penalización para evitar colas eternas
+        if info['veh_max_wait'] > 0:
+            reward -= 10 * (info['veh_max_wait'] ** 1.5)
+
+        # === 3. EFICIENCIA Y FLUJO ===
+        # Bonus por cruzar (Throughput)
+        if info['peatones_cruzados'] > 0:
+            reward += 150 * info['peatones_cruzados'] # Gran premio por liberar peatones
+            
+        # Bonus suave por fase peatonal activa SOLO si hay demanda
         if info['fase_peatonal']:
-            reward += 200
-            if info['peatones_cruzados'] > 0:
-                reward += 100 * info['peatones_cruzados']
+            if info['peatones_esperando'] > 0 or info['peatones_cruzados'] > 0:
+                reward += 50
+            else:
+                # Pequeña penalización si está en verde para peatones sin nadie (ineficiente)
+                reward -= 10
 
-        # 4. Penalización por colisiones
+        # === 4. SEGURIDAD (Crítico) ===
         if info['colisiones'] > 0:
             reward -= 2000
             
