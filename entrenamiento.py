@@ -28,7 +28,7 @@ ROUTE_FILE = "trigal_peatones.rou.xml"
 MODEL_PATH = "trigal_model_ambulancia.zip"
 OUTPUT_DIR = "outputs_optimizados"
 LOG_CSV = os.path.join(OUTPUT_DIR, "progreso_entrenamiento.csv")
-TIMESTEPS = 150_000        
+TIMESTEPS = 10_000        
 SIM_SECONDS = 3600      
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -83,6 +83,76 @@ class EntornoOptimizado(sumo_rl.SumoEnvironment):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.peatones_anteriores = set()
+
+    def _get_ambulance_action(self, ts):
+        """
+        Retorna la acción (índice de fase verde) que favorece a la ambulancia.
+        Si no hay ambulancia o no necesita paso, retorna None.
+        """
+        ambulance_lane = None
+        vehicles = traci.vehicle.getIDList()
+        for v in vehicles:
+            if traci.vehicle.getTypeID(v) == "ambulancia":
+                ambulance_lane = traci.vehicle.getLaneID(v)
+                break # Asumimos una ambulancia prioritaria a la vez por simplicidad
+
+        if not ambulance_lane:
+            return None
+
+        # Verificar si la ambulancia está en un carril controlado por este semáforo
+        if ambulance_lane not in ts.lanes:
+            return None
+
+        # Mapear carril a índice de enlace del semáforo
+        # controlled_links = [ [(lane, via, link), ...], ... ] correspondiente a cada char del state
+        controlled_links = traci.trafficlight.getControlledLinks(ts.id)
+        target_link_indices = []
+        
+        for i, links in enumerate(controlled_links):
+            for link in links:
+                if link[0] == ambulance_lane:
+                    target_link_indices.append(i)
+        
+        if not target_link_indices:
+            return None
+
+        # Buscar qué fase verde activa estos enlaces
+        best_action = None
+        
+        for action in range(ts.num_green_phases):
+            # Intentamos acceder a la fase verde directamente si existe la propiedad
+            try:
+                # sumo_rl abstrae las fases verdes. Necesitamos encontrar cuál es.
+                # ts.green_phases es una lista de objetos Phase (o dicts)
+                phase_state = ts.green_phases[action].state
+            except AttributeError:
+                continue
+
+            # Verificar si esta fase da paso a la ambulancia
+            gives_way = False
+            for idx in target_link_indices:
+                if idx < len(phase_state):
+                    if phase_state[idx].lower() == 'g':
+                        gives_way = True
+                        break
+            
+            if gives_way:
+                best_action = action
+                break # Encontramos una fase que sirve
+        
+        return best_action
+
+    def step(self, action):
+        # Override de acción si hay ambulancia
+        if self.single_agent:
+            ts = self.traffic_signals[self.ts_ids[0]]
+            ambulance_action = self._get_ambulance_action(ts)
+            
+            if ambulance_action is not None:
+                # Forzar la acción de la ambulancia
+                action = ambulance_action
+        
+        return super().step(action)
 
     def _get_system_info(self):
         info = super()._get_system_info()
@@ -143,8 +213,28 @@ class EntornoOptimizado(sumo_rl.SumoEnvironment):
                 if traci.person.getRoadID(p).startswith(":"):
                     peatones_infraccion += 1
 
+        # Detección de Tiempos Muertos Vehiculares (Luz verde sin autos)
+        veh_dead_time = 0
+        # Obtenemos los links controlados por el semáforo (índice 0)
+        # controlled_links es una lista de listas de tuplas (lane, via, link) para cada índice del estado
+        controlled_links = traci.trafficlight.getControlledLinks(self.ts_ids[0])
+        
+        # Recorremos el estado del semáforo (excluyendo los últimos 4 que son peatones)
+        for i, char in enumerate(state[:-4]):
+            if char.lower() == 'g': # Si está en verde (mayúscula o minúscula)
+                # Verificamos los carriles asociados a este índice
+                if i < len(controlled_links):
+                    links = controlled_links[i]
+                    for link in links:
+                        lane_id = link[0] # El primer elemento es el ID del carril de entrada
+                        if lane_id:
+                            # Contamos vehículos en este carril
+                            if traci.lane.getLastStepVehicleNumber(lane_id) == 0:
+                                veh_dead_time += 1
+
         info.update({
             'peatones_infraccion': peatones_infraccion,
+            'veh_dead_time': veh_dead_time, # Nueva métrica
             'peatones_esperando': peat_esperando,
             'peatones_max_wait': peat_max_wait,
             'peatones_total_wait': peat_total_wait,
@@ -193,6 +283,10 @@ class EntornoOptimizado(sumo_rl.SumoEnvironment):
         # Frustración Vehicular: Penalización para evitar colas eternas
         if info['veh_max_wait'] > 0:
             reward -= 10 * (info['veh_max_wait'])
+
+        # Penalización por Tiempos Muertos Vehiculares (NUEVO)
+        if info['veh_dead_time'] > 0:
+            reward -= 20 * info['veh_dead_time'] # Penalización por cada carril verde vacío
 
         # === 3. EFICIENCIA Y FLUJO ===
         # Bonus por cruzar (Throughput)
@@ -339,7 +433,7 @@ if __name__ == "__main__":
         net_file=NET_FILE,
         route_file=ROUTE_FILE,
         out_csv_name=os.path.join(OUTPUT_DIR, "trigal_train"),
-        use_gui=False,
+        use_gui=True,
         num_seconds=SIM_SECONDS,
         single_agent=True,
         min_green=10,
