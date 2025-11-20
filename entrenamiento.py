@@ -28,7 +28,7 @@ ROUTE_FILE = "trigal_peatones.rou.xml"
 MODEL_PATH = "trigal_model_ambulancia.zip"
 OUTPUT_DIR = "outputs_optimizados"
 LOG_CSV = os.path.join(OUTPUT_DIR, "progreso_entrenamiento.csv")
-TIMESTEPS = 100_000        
+TIMESTEPS = 300_000        
 SIM_SECONDS = 3600      
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
