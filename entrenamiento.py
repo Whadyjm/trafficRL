@@ -28,7 +28,7 @@ ROUTE_FILE = "trigal_peatones.rou.xml"
 MODEL_PATH = "trigal_model_ambulancia.zip"
 OUTPUT_DIR = "outputs_optimizados"
 LOG_CSV = os.path.join(OUTPUT_DIR, "progreso_entrenamiento.csv")
-TIMESTEPS = 10_000        
+TIMESTEPS = 500_000        
 SIM_SECONDS = 3600      
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -286,7 +286,7 @@ class EntornoOptimizado(sumo_rl.SumoEnvironment):
 
         # Penalización por Tiempos Muertos Vehiculares (NUEVO)
         if info['veh_dead_time'] > 0:
-            reward -= 20 * info['veh_dead_time'] # Penalización por cada carril verde vacío
+            reward -= 50 * info['veh_dead_time'] # Penalización por cada carril verde vacío
 
         # === 3. EFICIENCIA Y FLUJO ===
         # Bonus por cruzar (Throughput)
@@ -377,7 +377,7 @@ class ProgressLoggerCallback(BaseCallback):
         df.to_csv(LOG_CSV, index=False)
         print(f"\nCSV guardado: {LOG_CSV}")
 
-        fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(15, 10))
+        fig, ((ax1, ax2), (ax3, ax4), (ax5, ax6)) = plt.subplots(3, 2, figsize=(15, 15))
         
         # 1. Recompensa
         ax1.plot(df['timestep'], df['reward'], label='Recompensa', color='blue', alpha=0.6)
@@ -389,7 +389,7 @@ class ProgressLoggerCallback(BaseCallback):
         # 2. Tiempos de Espera (Vehículos vs Peatones)
         ax2.plot(df['timestep'], df['waiting_time_veh'], label='Vehículos (Total)', color='red', alpha=0.5)
         ax2.plot(df['timestep'], df['waiting_time_peat_total'], label='Peatones (Total)', color='green', alpha=0.5)
-        ax2.set_title('Tiempo Total de Espera')
+        ax2.set_title('Tiempo Total de Espera (Global)')
         ax2.set_xlabel('Timesteps')
         ax2.set_ylabel('Segundos')
         ax2.legend()
@@ -410,17 +410,27 @@ class ProgressLoggerCallback(BaseCallback):
         ax4.set_xlabel('Timesteps')
         ax4.legend()
         ax4.grid(True)
+
+        # 5. Tiempo de Espera Vehicular (Detallado)
+        ax5.plot(df['timestep'], df['mean_waiting_time_veh'], label='Promedio por Vehículo', color='teal')
+        # ax5.plot(df['timestep'], df['max_waiting_time_veh'], label='Máximo (Peor caso)', color='red', linestyle='--') # Si tuviéramos max guardado
+        ax5.set_title('Tiempo de Espera Vehicular Promedio')
+        ax5.set_xlabel('Timesteps')
+        ax5.set_ylabel('Segundos')
+        ax5.legend()
+        ax5.grid(True)
         
-        # 5. Ambulancia (Nuevo plot si hay datos)
+        # 6. Ambulancia (Si hay datos)
         if df['ambulance_waiting'].sum() > 0:
-             plt.figure(figsize=(10, 5))
-             plt.plot(df['timestep'], df['ambulance_waiting'], label='Tiempo Espera Ambulancia', color='red')
-             plt.title('Prioridad Ambulancia')
-             plt.xlabel('Timesteps')
-             plt.ylabel('Segundos')
-             plt.legend()
-             plt.grid(True)
-             plt.savefig(os.path.join(OUTPUT_DIR, "progreso_ambulancia.png"))
+             ax6.plot(df['timestep'], df['ambulance_waiting'], label='Tiempo Espera Ambulancia', color='red')
+             ax6.set_title('Prioridad Ambulancia')
+             ax6.set_xlabel('Timesteps')
+             ax6.set_ylabel('Segundos')
+             ax6.legend()
+             ax6.grid(True)
+        else:
+            ax6.text(0.5, 0.5, 'Sin datos de ambulancia aún', horizontalalignment='center', verticalalignment='center')
+            ax6.set_title('Prioridad Ambulancia')
 
         plt.tight_layout()
         plt.savefig(os.path.join(OUTPUT_DIR, "progreso_entrenamiento.png"))
@@ -432,7 +442,7 @@ if __name__ == "__main__":
     env = EntornoOptimizado(
         net_file=NET_FILE,
         route_file=ROUTE_FILE,
-        out_csv_name=os.path.join(OUTPUT_DIR, "trigal_train"),
+        #out_csv_name=os.path.join(OUTPUT_DIR, "trigal_train"),
         use_gui=True,
         num_seconds=SIM_SECONDS,
         single_agent=True,
