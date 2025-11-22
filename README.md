@@ -15,11 +15,11 @@ El "cerebro" del sistema no es solo una red neuronal; es un controlador híbrido
 *   **Objetivo**: Tiempo de espera cero para emergencias.
 
 ### 2. Prioridad Secundaria: Horario Peatonal Programado 🚶
-*   **Condición**: Si **no** hay ambulancia presente.
+*   **Condición**: Si **no** hay ambulancia presente Y **hay peatones activos** (esperando o cruzando).
 *   **Lógica**: Se basa en el tiempo de ciclo de la simulación (137 segundos en total).
-    *   **Ventana 1 (Segundos 23-38)**: Se fuerza la **Fase Peatonal 1**.
-    *   **Ventana 2 (Segundos 122-137)**: Se fuerza la **Fase Peatonal 2**.
-*   **Objetivo**: Garantizar ventanas de cruce seguras y predecibles para peatones, independientemente de lo que el modelo RL quiera hacer.
+    *   **Ventana 1 (Segundos 23-38)**: Se fuerza la **Fase Peatonal 1** SOLO si se detecta actividad peatonal.
+    *   **Ventana 2 (Segundos 122-137)**: Se fuerza la **Fase Peatonal 2** SOLO si se detecta actividad peatonal.
+*   **Objetivo**: Garantizar ventanas de cruce seguras para peatones cuando son necesarias, evitando detener el tráfico vehicular innecesariamente si no hay nadie esperando.
 
 ### 3. Prioridad Terciaria: Agente Inteligente (RL - PPO) 🤖
 *   **Condición**: Si no hay emergencias ni es horario peatonal reservado.

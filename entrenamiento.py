@@ -28,7 +28,7 @@ ROUTE_FILE = "trigal_peatones.rou.xml"
 MODEL_PATH = "trigal_model_ambulancia.zip"
 OUTPUT_DIR = "outputs_optimizados"
 LOG_CSV = os.path.join(OUTPUT_DIR, "progreso_entrenamiento.csv")
-TIMESTEPS = 500_000        
+TIMESTEPS = 10_000        
 SIM_SECONDS = 3600      
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -77,6 +77,24 @@ class EntornoOptimizado(sumo_rl.SumoEnvironment):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.peatones_anteriores = set()
+
+    def _is_pedestrian_active(self):
+        """
+        Verifica si hay peatones esperando o cruzando.
+        Retorna True si hay actividad peatonal que requiera semáforo.
+        """
+        # 1. Peatones esperando
+        vehicles = traci.person.getIDList()
+        for p in vehicles:
+            if traci.person.getWaitingTime(p) > 0:
+                return True
+            
+            # 2. Peatones cruzando (en edges internos ":")
+            # Esto es crítico para no cortarles el verde mientras cruzan
+            if traci.person.getRoadID(p).startswith(":"):
+                return True
+                
+        return False
 
     def _get_ambulance_action(self, ts):
         """
@@ -166,10 +184,12 @@ class EntornoOptimizado(sumo_rl.SumoEnvironment):
                 sim_time = traci.simulation.getTime()
                 cycle_time = sim_time % 137
                 
-                if 23 <= cycle_time < 38:
-                    action = 1 # Forzar Fase Peatonal 1
-                elif 122 <= cycle_time < 137:
-                    action = 5 # Forzar Fase Peatonal 2
+                # Solo activar fases peatonales si hay peatones REALES
+                if self._is_pedestrian_active():
+                    if 23 <= cycle_time < 38:
+                        action = 1 # Forzar Fase Peatonal 1
+                    elif 122 <= cycle_time < 137:
+                        action = 5 # Forzar Fase Peatonal 2
         
         return super().step(action)
 
