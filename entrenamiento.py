@@ -28,7 +28,7 @@ ROUTE_FILE = "trigal_peatones.rou.xml"
 MODEL_PATH = "trigal_model_ambulancia.zip"
 OUTPUT_DIR = "outputs_optimizados"
 LOG_CSV = os.path.join(OUTPUT_DIR, "progreso_entrenamiento.csv")
-TIMESTEPS = 10_000        
+TIMESTEPS = 200_000        
 SIM_SECONDS = 3600      
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -325,7 +325,7 @@ class EntornoOptimizado(sumo_rl.SumoEnvironment):
 
         # Penalización por Tiempos Muertos Vehiculares (NUEVO)
         if info['veh_dead_time'] > 0:
-            reward -= 50 * info['veh_dead_time'] # Penalización por cada carril verde vacío
+            reward -= 100 * info['veh_dead_time'] # Penalización por cada carril verde vacío
 
         # === 3. EFICIENCIA Y FLUJO ===
         # Bonus por cruzar (Throughput)
@@ -482,7 +482,7 @@ if __name__ == "__main__":
         net_file=NET_FILE,
         route_file=ROUTE_FILE,
         #out_csv_name=os.path.join(OUTPUT_DIR, "trigal_train"),
-        use_gui=True,
+        use_gui=False,
         num_seconds=SIM_SECONDS,
         single_agent=True,
         min_green=10,
