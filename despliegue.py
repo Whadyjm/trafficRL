@@ -109,11 +109,36 @@ class EntornoOptimizado(sumo_rl.SumoEnvironment):
         # Override de acción si hay ambulancia
         if self.single_agent:
             ts = self.traffic_signals[self.ts_ids[0]]
-            ambulance_action = self._get_ambulance_action(ts)
             
+            # 1. PRIORIDAD MÁXIMA: AMBULANCIA
+            ambulance_action = self._get_ambulance_action(ts)
             if ambulance_action is not None:
-                # Forzar la acción de la ambulancia
                 action = ambulance_action
+                # HACK: Forzar cambio inmediato ignorando min_green
+                # Hacemos creer al sistema que ya pasó el tiempo mínimo
+                ts.time_since_last_phase_change = ts.min_green + ts.yellow_time + 1
+            
+            # 2. PRIORIDAD SECUNDARIA: HORARIO PEATONAL (Si no hay ambulancia)
+            else:
+                # Ciclo total es 137s según .net.xml
+                # Fase Peatonal 1 (Phase 2): Inicio 23s, Duración 15s -> [23, 38)
+                # Fase Peatonal 2 (Phase 9): Inicio 122s, Duración 15s -> [122, 137)
+                
+                # Mapeo de Acciones (Solo fases verdes):
+                # Action 0 -> Phase 0
+                # Action 1 -> Phase 2 (Peatonal 1)
+                # Action 2 -> Phase 3
+                # Action 3 -> Phase 5
+                # Action 4 -> Phase 7
+                # Action 5 -> Phase 9 (Peatonal 2)
+                
+                sim_time = traci.simulation.getTime()
+                cycle_time = sim_time % 137
+                
+                if 23 <= cycle_time < 38:
+                    action = 1 # Forzar Fase Peatonal 1
+                elif 122 <= cycle_time < 137:
+                    action = 5 # Forzar Fase Peatonal 2
         
         return super().step(action)
 
