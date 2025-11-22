@@ -39,17 +39,14 @@ print(f"Simulación: {SIM_SECONDS}s | Timesteps: {TIMESTEPS:,}")
 print(f"Inicio: {fecha_hora_inicio}")
 print("-" * 70)
 
-# === OBSERVATION CLASS ===
 class AmbulanceObservationFunction(sumo_rl.ObservationFunction):
     def __init__(self, ts):
         self.ts = ts
 
     def __call__(self, ts=None):
-        # Support calling with or without argument
         if ts is None:
             ts = self.ts
             
-        # Obtener observación estándar (fases, colas, etc.)
         phase_id = [1 if ts.green_phase == i else 0 for i in range(ts.num_green_phases)]
         min_green = [1 if ts.time_since_last_phase_change < ts.min_green + ts.yellow_time else 0]
         density = ts.get_lanes_density()
@@ -62,7 +59,6 @@ class AmbulanceObservationFunction(sumo_rl.ObservationFunction):
         vehicles = traci.vehicle.getIDList()
         for v in vehicles:
             if traci.vehicle.getTypeID(v) == "ambulancia":
-                # Distancia al semáforo (aproximada por posición en lane)
                 lane_id = traci.vehicle.getLaneID(v)
                 if lane_id in ts.lanes:
                     ambulance_approaching = 1
@@ -74,11 +70,9 @@ class AmbulanceObservationFunction(sumo_rl.ObservationFunction):
 
     def observation_space(self):
         ts = self.ts
-        # Fase (num_green_phases) + MinGreen (1) + Density (num_lanes) + Queue (num_lanes) + Ambulance (2)
         dim = ts.num_green_phases + 1 + 2 * len(ts.lanes) + 2
         return spaces.Box(low=0, high=1, shape=(dim,), dtype=np.float32)
 
-# === ENTORNO FINAL: PEATONES PRIORIDAD ALTA + FLUJO VEHICULAR EQUILIBRADO ===
 class EntornoOptimizado(sumo_rl.SumoEnvironment):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -146,11 +140,36 @@ class EntornoOptimizado(sumo_rl.SumoEnvironment):
         # Override de acción si hay ambulancia
         if self.single_agent:
             ts = self.traffic_signals[self.ts_ids[0]]
-            ambulance_action = self._get_ambulance_action(ts)
             
+            # 1. PRIORIDAD MÁXIMA: AMBULANCIA
+            ambulance_action = self._get_ambulance_action(ts)
             if ambulance_action is not None:
-                # Forzar la acción de la ambulancia
                 action = ambulance_action
+                # HACK: Forzar cambio inmediato ignorando min_green
+                # Hacemos creer al sistema que ya pasó el tiempo mínimo
+                ts.time_since_last_phase_change = ts.min_green + ts.yellow_time + 1
+            
+            # 2. PRIORIDAD SECUNDARIA: HORARIO PEATONAL (Si no hay ambulancia)
+            else:
+                # Ciclo total es 137s según .net.xml
+                # Fase Peatonal 1 (Phase 2): Inicio 23s, Duración 15s -> [23, 38)
+                # Fase Peatonal 2 (Phase 9): Inicio 122s, Duración 15s -> [122, 137)
+                
+                # Mapeo de Acciones (Solo fases verdes):
+                # Action 0 -> Phase 0
+                # Action 1 -> Phase 2 (Peatonal 1)
+                # Action 2 -> Phase 3
+                # Action 3 -> Phase 5
+                # Action 4 -> Phase 7
+                # Action 5 -> Phase 9 (Peatonal 2)
+                
+                sim_time = traci.simulation.getTime()
+                cycle_time = sim_time % 137
+                
+                if 23 <= cycle_time < 38:
+                    action = 1 # Forzar Fase Peatonal 1
+                elif 122 <= cycle_time < 137:
+                    action = 5 # Forzar Fase Peatonal 2
         
         return super().step(action)
 
@@ -443,7 +462,7 @@ if __name__ == "__main__":
         net_file=NET_FILE,
         route_file=ROUTE_FILE,
         #out_csv_name=os.path.join(OUTPUT_DIR, "trigal_train"),
-        use_gui=False,
+        use_gui=True,
         num_seconds=SIM_SECONDS,
         single_agent=True,
         min_green=10,
