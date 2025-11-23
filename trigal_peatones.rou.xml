@@ -29,6 +29,16 @@
     </personFlow>
     <!-- Ambulance -->
     <vType id="ambulancia" vClass="emergency" guiShape="emergency" speedFactor="1.5" probability="1.0"/>
-    <flow id="f_ambulancia" type="ambulancia" begin="0.00" end="3600.00" probability="0.01" from="-E3" to="E1"/>
+    <flow id="f_ambulancia" type="ambulancia" begin="0.00" end="3600.00" probability="0.0002" from="-E3" to="E1"/>
+    <flow id="f_ambulancia_2" type="ambulancia" begin="0.00" end="3600.00" probability="0.0002" from="-E1" to="E3"/>
+    <flow id="f_ambulancia_3" type="ambulancia" begin="0.00" end="3600.00" probability="0.0002" from="E0" to="E0.88"/>
+    <flow id="f_ambulancia_4" type="ambulancia" begin="0.00" end="3600.00" probability="0.0002" from="-E0" to="-E0.101"/>
+
+    <!-- Motorcycles -->
+    <vType id="moto" vClass="motorcycle" guiShape="motorcycle" speedFactor="1.2" probability="1.0"/>
+    <flow id="f_moto_0" type="moto" begin="0.00" end="3600.00" probability="0.01" from="-E3" to="E1"/>
+    <flow id="f_moto_1" type="moto" begin="0.00" end="3600.00" probability="0.01" from="-E1" to="E3"/>
+    <flow id="f_moto_2" type="moto" begin="0.00" end="3600.00" probability="0.01" from="E0" to="E0.88"/>
+    <flow id="f_moto_3" type="moto" begin="0.00" end="3600.00" probability="0.01" from="-E0" to="-E0.101"/>
 
 </routes>
